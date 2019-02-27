@@ -1,0 +1,76 @@
+{
+  "name": "s3-object-content-stream",
+  "version": "1.0.0",
+  "description": "A Node.js transform stream that gets S3 object keys and emits their actual content",
+  "main": "src/index.js",
+  "scripts": {
+    "test:lint": "eslint .",
+    "test:unit": "jest",
+    "test:package": "BUILD=true jest --coverage=false",
+    "build": "pack build",
+    "test": "npm run test:lint && npm run test:unit && npm run build && npm run test:package",
+    "pack:publish": "pack publish --no-yarn --verbose $(head -n 1 VERSION)",
+    "release:tag": "git tag $(head -n 1 VERSION) && git push --tags",
+    "coverage:submit": "codecov"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lmammino/s3-object-content-stream.git"
+  },
+  "keywords": [
+    "Stream",
+    "Streams",
+    "AWS",
+    "S3",
+    "Content",
+    "Object content",
+    "Stream content",
+    "Object"
+  ],
+  "author": "Luciano Mammino",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/lmammino/s3-object-content-stream/issues"
+  },
+  "homepage": "https://github.com/lmammino/s3-object-content-stream#readme",
+  "devDependencies": {
+    "@pika/pack": "^0.3.3",
+    "@pika/plugin-build-node": "^0.3.12",
+    "@pika/plugin-build-types": "^0.3.12",
+    "@pika/plugin-standard-pkg": "^0.3.12",
+    "@pika/types": "^0.3.10",
+    "codecov": "^3.2.0",
+    "eslint": "^5.14.1",
+    "eslint-config-standard": "^12.0.0",
+    "eslint-plugin-import": "^2.16.0",
+    "eslint-plugin-node": "^8.0.1",
+    "eslint-plugin-promise": "^4.0.1",
+    "eslint-plugin-standard": "^4.0.0",
+    "jest": "^24.1.0"
+  },
+  "dependencies": {
+    "readable-stream": "^3.1.1"
+  },
+  "peerDependencies": {
+    "aws-sdk": "^2"
+  },
+  "@pika/pack": {
+    "pipeline": [
+      [
+        "@pika/plugin-standard-pkg",
+        {
+          "exclude": [
+            "*.test.js",
+            "__snapshots__/*"
+          ]
+        }
+      ],
+      [
+        "@pika/plugin-build-node"
+      ],
+      [
+        "@pika/plugin-build-types"
+      ]
+    ]
+  }
+}
