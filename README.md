@@ -24,61 +24,96 @@ yarn add s3-object-content-stream
 **Note:** In order to use this package you need to have the [`aws-sdk`](https://www.npmjs.com/package/aws-sdk) module installed
 (or any other library that allows you to instantiate an S3 client with the `listBucketV2` method).
 
-
 ## Usage
 
-TODO: REWRITE FROM HERE
+This library works very well in conjunction with [`s3-list-bucket-stream`](https://www.npmjs.com/package/s3-list-bucket-stream), a library that allows you to create a readable stream to list files from an S3 bucket.
 
-Here's a simple example that allows to list all the files in a bucket
+Here's a simple example that allows to output the content of objects
+in an S3 bucket:
 
 ```javascript
 const S3ListBucketStream = require('s3-list-bucket-stream')
+const S3ObjectContentStream = require('s3-object-content-stream')
 
 // create the S3 client
 const AWS = require('aws-sdk')
 const s3 = new AWS.S3()
 
-// create the instance for the stream
-const listBucketStream = new S3ListBucketStream(s3, 'some-bucket', 'path/to/files')
-
-// attach an 'on data' event which will start the stream flow
-listBucketStream
-  .on('data', (key) => console.log(key.toString()))
-```
-
-This will output:
-
-```plain
-path/to/files/file1
-path/to/files/file2
-path/to/files/file3
-...
-```
-
-If you want to emit objects containing the entire S3 object metadata, you can do so
-by enabling the `fullMetadata` option while creating the stream instance:
-
-```javascript
-const S3ListBucketStream = require('s3-list-bucket-stream')
-
-// create the S3 client
-const AWS = require('aws-sdk')
-const s3 = new AWS.S3()
-
-// create the instance for the stream
+// create the instance for the list bucket stream
 const listBucketStream = new S3ListBucketStream(
   s3,
   'some-bucket',
-  'path/to/files',
-  { fullMetadata: true }
+  'path/to/files'
 )
 
-// attach an 'on data' event which will start the stream flow
-listBucketStream
-  .on('data', console.log)
+// create the instance for the object content stream
+const objectContentStream = new S3ObjectContentStream(s3, 'some-bucket')
+
+// pipe the two streams together and outputs on the stdout
+listBucketStream.pipe(objectContentStream).pipe(process.stdout)
 ```
 
-This will produce this output:
+This will print the content of all the files in `some-bucket` with the prefix `path/to/files`.
+
+Note that there will be no separator between different files.
+
+## Content transformation
+
+Most often your data in S3 will be in a compressed and/or encrypted form.
+
+To deal with these cases, you can pass a factory function while instantiating a new `S3ObjectContentStream`.
+
+This factory function has the goal of creating a new Transform stream that will be used to convert the data while it is emitted to the next phase of the pipeline.
+
+The factory function receives the current chunk, so you can use that to do smart transformation based, for instance on the Object key (file name).
+
+In this example we use this feature to automatically decompress gzipped files before emitting their content:
+
+```javascript
+const { createGunzip } = require('zlib')
+const { extname } = require('path')
+const { PassThrough } = require('stream')
+const S3ListBucketStream = require('s3-list-bucket-stream')
+const S3ObjectContentStream = require('s3-object-content-stream')
+
+// definition of our factory function
+const ungzipIfNeeded = key => {
+  const extension = extname(key)
+  if (['.gz', '.gzip'].includes(extension)) {
+    return createGunzip() // if the file is gzip return a transform stream
+  }
+
+  // otherwise returns a passthrough stream (do not modify the content)
+  return new PassThrough()
+}
+
+// create the S3 client
+const AWS = require('aws-sdk')
+const s3 = new AWS.S3()
+
+// create the instance for the list bucket stream
+const listBucketStream = new S3ListBucketStream(
+  s3,
+  'some-bucket',
+  'path/to/files'
+)
+
+// create the instance for the object content stream
+const objectContentStream = new S3ObjectContentStream(
+  s3,
+  'some-bucket',
+  ungzipIfNeeded // pass our transform stream factory function
+)
+
+// pipe the two streams together and outputs on the stdout
+listBucketStream.pipe(objectContentStream).pipe(process.stdout)
+```
+
+## Full metadata mode
+
+If your readable source of S3 Objects emits objects (where for every element you have a property called `Key` that identifies the object name), you need to enable the `fullMetadata` flag for the stream to switch to object mode and read the object keys correctly.
+
+This mode is useful when you want to operate to a level that is closer to what you get from the AWS SDK `ListObjectsV2` API where objects are identified as follows:
 
 ```plain
 { Key: 'path/to/files/file1',
@@ -99,61 +134,40 @@ This will produce this output:
 ...
 ```
 
-**Note**: with this option enabled, the stream will automatically enable `objectMode`.
+In the following example we will use `S3ListBucketStream` in full metadata mode, hence we will need to enable full metadata even in our instance of `S3ObjectContentStream`:
 
+```javascript
+const S3ListBucketStream = require('s3-list-bucket-stream')
+const S3ObjectContentStream = require('s3-object-content-stream')
 
-## Programmatic API
+// create the S3 client
+const AWS = require('aws-sdk')
+const s3 = new AWS.S3()
 
-Here you can find more details on how to configure the stream instances and what kind
-of events are available.
+// create the instance for the list bucket stream
+const listBucketStream = new S3ListBucketStream(
+  s3,
+  'some-bucket',
+  'path/to/files',
+  { fullMetadata: true } // full metadata enabled
+)
 
-### Constructor arguments
+// create the instance for the object content stream
+const objectContentStream = new S3ObjectContentStream(
+  s3,
+  'some-bucket',
+  undefined, // no transformation needed
+  { fullMetadata: true } // full metadata enabled
+)
 
-When creating a new instance of the stream these are the arguments you can pass as
-constructor arguments:
-
- - `s3` (`Object`): An S3 client from the AWS SDK (or any object that implements a compatible `listObjectsV2` method)
- - `bucket` (`string`): The name of the bucket to list
- - `[bucketPrefix]` (`string`): A prefix to list only files with the given prefix (optional)
- - `[options]` (`S3ListBucketStreamOptions`): Stream options (optional)
- - `[listObjectsV2args]` (`ListObjectsV2args`): Extra arguments to be passed to the listObjectsV2 call in the S3 client (optional)
-
-#### S3ListBucketStreamOptions
-
-`S3ListBucketStreamOptions` is an object that can contain arbitrary `Readable` stream options.
-You can also specify the following extra options:
-
- - `fullMetadata` (`boolean`): switches the stream to `objectMode: true` and emits objects containing the full metadata for a given bucket object. See the example above for more details (default value is `false`).
-
-#### ListObjectsV2args
-
-`ListObjectsV2args` is an object that can contain arbitrary [`s3.listObjectsV2` parameters](https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#listObjectsV2-property) like `MaxKeys` (set to `1000` by default), `FetchOwner`, `RequestPayer` or `StartAfter`.
-
-These parameters will be propagated to every internal `listObjectsV2` call to the S3 client
-provided at construction time.
-
-**Note**: be careful not to specify values for `Bucket`, `Prefix` and `ContinuationToken`
-as these values will be managed by the internals according to the internal state and configuration
-of the given stream instance.
-
-
-### Events
-
-The stream is a `Readable` stream instance, so it can fire all the common
-[`Readable` stream events](https://nodejs.org/api/stream.html#stream_class_stream_readable).
-
-In addition to these events there some new events that will be fired by a given instance:
-
- - `page`: fired when a new page is fetched through the S3 client. If listening to this event,
-   your callback will receive an object containing the properties `params` (original parameters for the `listObjectsV2` call)
-   and `data` (the raw response to the `listObjectsV2` call).
- - `stopped`: fired when the readable buffer is full and the fetch from S3 is stopped
- - `restarted`: fired when the fetch from S3 is restarted after a pause
+// pipe the two streams together and outputs on the stdout
+listBucketStream.pipe(objectContentStream).pipe(process.stdout)
+```
 
 ## Contributing
 
 Everyone is very welcome to contribute to this project. You can contribute just by submitting bugs or
-suggesting improvements by [opening an issue on GitHub](https://github.com/lmammino/s3-list-bucket-stream/issues).
+suggesting improvements by [opening an issue on GitHub](https://github.com/lmammino/s3-object-content-stream/issues).
 
 You can also submit PRs as long as you adhere with the code standards and write tests for the proposed changes.
 

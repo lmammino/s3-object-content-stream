@@ -16,7 +16,10 @@ class Md5ify extends Transform {
   }
 
   _flush (callback) {
-    const md5 = crypto.createHash('md5').update(this._buff).digest('hex')
+    const md5 = crypto
+      .createHash('md5')
+      .update(this._buff)
+      .digest('hex')
     this.push(md5)
     callback()
   }
@@ -39,13 +42,18 @@ class ArrayReadable extends Readable {
 }
 
 class RawReadable extends Readable {
-  constructor (content, options) {
+  constructor (content, shouldFailOnRead = false, options) {
     super(options)
     this._content = content
+    this._shouldFailOnRead = shouldFailOnRead
     this._pointer = 0
   }
 
   _read (size) {
+    if (this._shouldFailOnRead) {
+      return this.emit('error', new Error('CannotReadResource'))
+    }
+
     if (this._pointer >= this._content.length) {
       return this.push(null)
     }
@@ -58,27 +66,28 @@ class RawReadable extends Readable {
 }
 
 class MockS3 {
-  constructor (objectContentMap, shouldFail = false) {
+  constructor (objectContentMap, shouldFailOnRead = false) {
     this._objectContentMap = objectContentMap
-    this._shouldFail = shouldFail
+    this._shouldFailOnRead = shouldFailOnRead
     this._receivedParams = []
   }
 
   getObject (params) {
     this._receivedParams.push(params)
-    if (this._shouldFail || typeof (this._objectContentMap[params.Key]) === 'undefined') {
+    if (typeof this._objectContentMap[params.Key] === 'undefined') {
       throw new Error('ObjectNotFound')
     }
     const content = this._objectContentMap[params.Key]
-    return ({
+    const failOnRead = this._shouldFailOnRead
+    return {
       createReadStream () {
-        return new RawReadable(content)
+        return new RawReadable(content, failOnRead)
       }
-    })
+    }
   }
 }
 
-test('It should return concatenated output from multiple buckets', (done) => {
+test('It should return concatenated output from multiple buckets', done => {
   const objectContentMap = {
     'files/file1': 'some data',
     'files/file2': 'some more data',
@@ -95,10 +104,10 @@ test('It should return concatenated output from multiple buckets', (done) => {
 
   sourceStream
     .pipe(objectContentStream)
-    .on('data', (d) => {
+    .on('data', d => {
       emittedData = emittedData + d
     })
-    .on('error', (err) => {
+    .on('error', err => {
       throw err
     })
     .on('finish', () => {
@@ -108,25 +117,32 @@ test('It should return concatenated output from multiple buckets', (done) => {
     })
 })
 
-test('It should operate if the source stream is in fullMetadata mode', (done) => {
+test('It should operate if the source stream is in fullMetadata mode', done => {
   const bucketName = 'some-bucket'
   const objectContentMap = {
     'files/file1': 'some data',
     'files/file2': 'some more data',
     'files/file3': 'even moar data'
   }
-  const objectsFullMeta = Object.keys(objectContentMap)
-    .map((name) => ({
-      Key: name,
-      Bucket: bucketName,
-      ETag: crypto.createHash('md5').update(objectContentMap[name]).digest('hex'),
-      Size: objectContentMap[name].length
-    }))
+  const objectsFullMeta = Object.keys(objectContentMap).map(name => ({
+    Key: name,
+    Bucket: bucketName,
+    ETag: crypto
+      .createHash('md5')
+      .update(objectContentMap[name])
+      .digest('hex'),
+    Size: objectContentMap[name].length
+  }))
   const sourceStream = new ArrayReadable(objectsFullMeta, { objectMode: true })
 
   const s3 = new MockS3(objectContentMap)
 
-  const objectContentStream = new S3ObjectContentStream(s3, bucketName, undefined, { fullMetadata: true })
+  const objectContentStream = new S3ObjectContentStream(
+    s3,
+    bucketName,
+    undefined,
+    { fullMetadata: true }
+  )
 
   const expectedData = Object.values(objectContentMap).join('')
 
@@ -134,10 +150,10 @@ test('It should operate if the source stream is in fullMetadata mode', (done) =>
 
   sourceStream
     .pipe(objectContentStream)
-    .on('data', (d) => {
+    .on('data', d => {
       emittedData = emittedData + d
     })
-    .on('error', (err) => {
+    .on('error', err => {
       throw err
     })
     .on('finish', () => {
@@ -147,32 +163,36 @@ test('It should operate if the source stream is in fullMetadata mode', (done) =>
     })
 })
 
-test('It should fail if operating in full metadata mode but the received object is not conform to the expected format', (done) => {
+test('It should fail if operating in full metadata mode but the received object is not conform to the expected format', done => {
   const bucketName = 'some-bucket'
   const objectContentMap = {
     'files/file1': 'some data',
     'files/file2': 'some more data',
     'files/file3': 'even moar data'
   }
-  const objectsFullMeta = Object.keys(objectContentMap)
-    .map((name) => ({
-      SomeNonCompliantField: name
-    }))
+  const objectsFullMeta = Object.keys(objectContentMap).map(name => ({
+    SomeNonCompliantField: name
+  }))
   const sourceStream = new ArrayReadable(objectsFullMeta, { objectMode: true })
 
   const s3 = new MockS3(objectContentMap)
 
-  const objectContentStream = new S3ObjectContentStream(s3, bucketName, undefined, { fullMetadata: true })
+  const objectContentStream = new S3ObjectContentStream(
+    s3,
+    bucketName,
+    undefined,
+    { fullMetadata: true }
+  )
 
-  sourceStream
-    .pipe(objectContentStream)
-    .on('error', (err) => {
-      expect(err.message).toEqual('Invalid chunk: the given chunk is not an object with a property "Key" (string)')
-      done()
-    })
+  sourceStream.pipe(objectContentStream).on('error', err => {
+    expect(err.message).toEqual(
+      'Invalid chunk: the given chunk is not an object with a property "Key" (string)'
+    )
+    done()
+  })
 })
 
-test('It should be possible to use a transform stream to transform the content of every single object', (done) => {
+test('It should be possible to use a transform stream to transform the content of every single object', done => {
   const objectContentMap = {
     'files/file1': 'some data',
     'files/file2': 'some more data',
@@ -181,18 +201,29 @@ test('It should be possible to use a transform stream to transform the content o
   const sourceStream = new ArrayReadable(Object.keys(objectContentMap))
   const s3 = new MockS3(objectContentMap)
 
-  const objectContentStream = new S3ObjectContentStream(s3, 'some-bucket', () => new Md5ify())
+  const objectContentStream = new S3ObjectContentStream(
+    s3,
+    'some-bucket',
+    () => new Md5ify()
+  )
 
-  const expectedData = Object.values(objectContentMap).map((d) => crypto.createHash('md5').update(d).digest('hex')).join('')
+  const expectedData = Object.values(objectContentMap)
+    .map(d =>
+      crypto
+        .createHash('md5')
+        .update(d)
+        .digest('hex')
+    )
+    .join('')
 
   let emittedData = ''
 
   sourceStream
     .pipe(objectContentStream)
-    .on('data', (d) => {
+    .on('data', d => {
       emittedData = emittedData + d
     })
-    .on('error', (err) => {
+    .on('error', err => {
       throw err
     })
     .on('finish', () => {
@@ -202,7 +233,24 @@ test('It should be possible to use a transform stream to transform the content o
     })
 })
 
-test('It should report an error correctly if something goes wrong', (done) => {
+test('It should report an error correctly if something goes wrong (object not found)', done => {
+  const objectContentMap = {
+    'files/file1': 'some data',
+    'files/file2': 'some more data',
+    'files/file3': 'even moar data'
+  }
+  const sourceStream = new ArrayReadable(['someFileThatDoesNotExists'])
+  const s3 = new MockS3(objectContentMap)
+
+  const objectContentStream = new S3ObjectContentStream(s3, 'some-bucket')
+
+  sourceStream.pipe(objectContentStream).on('error', err => {
+    expect(err.message).toEqual('ObjectNotFound')
+    done()
+  })
+})
+
+test('It should report an error correctly if something goes wrong (cannot read)', done => {
   const objectContentMap = {
     'files/file1': 'some data',
     'files/file2': 'some more data',
@@ -213,10 +261,8 @@ test('It should report an error correctly if something goes wrong', (done) => {
 
   const objectContentStream = new S3ObjectContentStream(s3, 'some-bucket')
 
-  sourceStream
-    .pipe(objectContentStream)
-    .on('error', (err) => {
-      expect(err.message).toEqual('ObjectNotFound')
-      done()
-    })
+  sourceStream.pipe(objectContentStream).on('error', err => {
+    expect(err.message).toEqual('CannotReadResource')
+    done()
+  })
 })
