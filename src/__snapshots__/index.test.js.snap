@@ -1,0 +1,52 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`It should be possible to use a transform stream to transform the content of every single object 1`] = `
+Array [
+  Object {
+    "Bucket": "some-bucket",
+    "Key": "files/file1",
+  },
+  Object {
+    "Bucket": "some-bucket",
+    "Key": "files/file2",
+  },
+  Object {
+    "Bucket": "some-bucket",
+    "Key": "files/file3",
+  },
+]
+`;
+
+exports[`It should operate if the source stream is in fullMetadata mode 1`] = `
+Array [
+  Object {
+    "Bucket": "some-bucket",
+    "Key": "files/file1",
+  },
+  Object {
+    "Bucket": "some-bucket",
+    "Key": "files/file2",
+  },
+  Object {
+    "Bucket": "some-bucket",
+    "Key": "files/file3",
+  },
+]
+`;
+
+exports[`It should return concatenated output from multiple buckets 1`] = `
+Array [
+  Object {
+    "Bucket": "some-bucket",
+    "Key": "files/file1",
+  },
+  Object {
+    "Bucket": "some-bucket",
+    "Key": "files/file2",
+  },
+  Object {
+    "Bucket": "some-bucket",
+    "Key": "files/file3",
+  },
+]
+`;

@@ -1,9 +1,9 @@
 'use strict'
 
-const { Transform } = require('readable-stream')
+const { Transform, finished } = require('readable-stream')
 
 const defaultOptions = {
-  fullMetadata: true
+  fullMetadata: false
 }
 
 class S3ObjectContentStream extends Transform {
@@ -15,7 +15,7 @@ class S3ObjectContentStream extends Transform {
       mergedOptions.objectMode = true
     }
 
-    super(options)
+    super(mergedOptions)
     this._s3 = s3
     this._bucket = bucket
     this._contentTransform = contentTransform
@@ -31,7 +31,9 @@ class S3ObjectContentStream extends Transform {
       Bucket: this._bucket,
       Key: this._fullMetadata ? chunk.Key : chunk.toString()
     }
+
     let objectStream = this._s3.getObject(params).createReadStream()
+
     if (typeof this._contentTransform === 'function') {
       objectStream = objectStream.pipe(this._contentTransform())
     }
@@ -39,7 +41,8 @@ class S3ObjectContentStream extends Transform {
     objectStream
       .on('data', (data) => this.push(data))
       .on('error', (err) => this.emit('error', err))
-      .on('finish', callback)
+
+    finished(objectStream, callback)
   }
 }
 
