@@ -66,7 +66,7 @@ class MockS3 {
 
   getObject (params) {
     this._receivedParams.push(params)
-    if (typeof (this._objectContentMap[params.Key]) === 'undefined') {
+    if (this._shouldFail || typeof (this._objectContentMap[params.Key]) === 'undefined') {
       throw new Error('ObjectNotFound')
     }
     const content = this._objectContentMap[params.Key]
@@ -198,6 +198,25 @@ test('It should be possible to use a transform stream to transform the content o
     .on('finish', () => {
       expect(s3._receivedParams).toMatchSnapshot()
       expect(emittedData).toEqual(expectedData)
+      done()
+    })
+})
+
+test('It should report an error correctly if something goes wrong', (done) => {
+  const objectContentMap = {
+    'files/file1': 'some data',
+    'files/file2': 'some more data',
+    'files/file3': 'even moar data'
+  }
+  const sourceStream = new ArrayReadable(Object.keys(objectContentMap))
+  const s3 = new MockS3(objectContentMap, true)
+
+  const objectContentStream = new S3ObjectContentStream(s3, 'some-bucket')
+
+  sourceStream
+    .pipe(objectContentStream)
+    .on('error', (err) => {
+      expect(err.message).toEqual('ObjectNotFound')
       done()
     })
 })
