@@ -1,6 +1,6 @@
 {
   "name": "s3-object-content-stream",
-  "version": "1.0.1",
+  "version": "0.0.1",
   "description": "A Node.js transform stream that gets S3 object keys and emits their actual content",
   "main": "src/index.js",
   "scripts": {
