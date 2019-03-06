@@ -78,7 +78,7 @@ const S3ObjectContentStream = require('s3-object-content-stream')
 
 // definition of our factory function
 const ungzipIfNeeded = key => {
-  const extension = extname(key)
+  const extension = extname(key.toString())
   if (['.gz', '.gzip'].includes(extension)) {
     return createGunzip() // if the file is gzip return a transform stream
   }
